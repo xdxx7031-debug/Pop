@@ -1,0 +1,51 @@
+name: Build NX616J Battery 6860 KPM
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-kpm:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out KPM source
+        uses: actions/checkout@v4
+
+      - name: Install build utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git make curl xz-utils file
+
+      - name: Install Arm bare-metal toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-elf.tar.xz"
+          curl -L --fail --retry 3 "$URL" -o "$RUNNER_TEMP/arm-toolchain.tar.xz"
+          tar -xf "$RUNNER_TEMP/arm-toolchain.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-elf/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch KernelPatch build headers
+        run: |
+          git clone --depth 1 https://github.com/bmax121/KernelPatch.git "$RUNNER_TEMP/KernelPatch"
+          mkdir -p "$RUNNER_TEMP/KernelPatch/kpms/nx616j-batt6860"
+          cp kpm/nx616j-batt6860.c kpm/Makefile "$RUNNER_TEMP/KernelPatch/kpms/nx616j-batt6860/"
+
+      - name: Build KPM
+        shell: bash
+        run: |
+          set -euo pipefail
+          export TARGET_COMPILE=aarch64-none-elf-
+          make -C "$RUNNER_TEMP/KernelPatch/kpms/nx616j-batt6860"
+          test -s "$RUNNER_TEMP/KernelPatch/kpms/nx616j-batt6860/nx616j-batt6860.kpm"
+          file "$RUNNER_TEMP/KernelPatch/kpms/nx616j-batt6860/nx616j-batt6860.kpm"
+          sha256sum "$RUNNER_TEMP/KernelPatch/kpms/nx616j-batt6860/nx616j-batt6860.kpm"
+
+      - name: Upload KPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nx616j-batt6860-kpm
+          path: ${{ runner.temp }}/KernelPatch/kpms/nx616j-batt6860/nx616j-batt6860.kpm
+          if-no-files-found: error
